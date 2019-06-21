@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+
+ignoruj=""
+POSIXLY_CORRECT=yes
+normalizace=""
+DIR=""
+pocetar=0
+poceta=$#
+# parametry
+while [ $# -ne 0 ] 
+do
+    case $1 in
+    	-i)	shift
+			if [ "$ignoruj" ]; then
+				echo "spatne zadane argumenty" > /dev/stderr
+				exit 1
+			fi
+			ignoruj=$1
+			pocetar=$(($pocetar+2));;
+		
+		-n)
+			if [ "$normalizace" ]; then
+				echo "spatne zadane argumenty" > /dev/stderr
+				exit 1
+			fi
+			normalizace=true
+			pocetar=$(($pocetar+1));;
+		
+		*)
+			DIR=$1
+			pocetar=$(($pocetar+1))
+			break;;
+    esac
+    shift
+done
+
+if ! [ "$pocetar" -eq "$poceta" ]; then
+	echo "spatne zadane argumenty" > /dev/stderr
+	exit 1
+fi
+
+if [ $DIR ]; then
+	IR=$DIR
+	if ! test -d $IR; then
+		echo "spatne zadana cesta" > /dev/stderr 
+		exit 2
+	fi
+else
+	IR="$(pwd)"
+fi
+
+if [ "$ignoruj" ]; then
+	A="$ignoruj"
+else
+	A="=-34="
+fi
+
+if [ "$IR" = "$A" ]; then
+	echo "nelze ignorovat korenovy adresar" > /dev/stderr
+	exit 3
+fi
+
+if test -t 1; then
+	col=$(tput cols)
+else
+	col=80
+fi
+
+echo "Root directory: $IR"
+ND=$(find $IR -type d -not -path "*$A*"  | wc -l | tr -s '[:space:]' | cut -d' ' -f2)
+
+echo "Directories: $ND"
+NF=$(find $IR -type f -not -path "*$A*" | wc -l | tr -s '[:space:]' | cut -d' ' -f2)
+
+echo "All files: $NF"
+echo "File size histogram:"
+
+	pole[0]=$(find $IR -type f -size -100c -not -path "*$A*" | wc -l)   
+	pole[1]=$(find $IR -type f -size +99c -size -1024c -not -path "*$A*" | wc -l)
+	pole[2]=$(find $IR -type f -size +1023c -size -10240c -not -path "*$A*" | wc -l)
+	pole[3]=$(find $IR -type f -size +10239c -size -102400c -not -path "*$A*" | wc -l)
+	pole[4]=$(find $IR -type f -size +102399c -size -1048579c -not -path "*$A*" | wc -l)
+	pole[5]=$(find $IR -type f -size +1048578c -size -10485790c -not -path "*$A*" | wc -l)
+	pole[6]=$(find $IR -type f -size +10485789c -size -104857900c -not -path "*$A*" | wc -l)
+	pole[7]=$(find $IR -type f -size +104857899c -size -1073741824c -not -path "*$A*" | wc -l)    	
+	pole[8]=$(find $IR -type f -size +1073741823c -not -path "*$A*" | wc -l)
+
+	i=0
+	maxim=0
+	while [ "$i" -le 8 ]; do
+		if [ "${pole[$maxim]}" -le "${pole[$i]}" ]; then
+			maxim="$i"
+		fi
+		i=$(($i+1))
+	done
+
+	norm=1
+	let co=col-13
+	if [ "$normalizace" ]; then
+		if [ "$co" -le "${pole["$maxim"]}" ]; then
+			norm=$(awk "BEGIN {printf \"%.4f\",${pole["maxim"]}/${co}}")
+		fi
+	fi
+
+	i=0
+	while [ "$i" -le 8 ]; do
+		pole["$i"]=$(awk "BEGIN {printf \"%.f\",${pole["$i"]}/${norm}}")
+		i=$(($i+1))
+	done
+
+	a=0;ret=""
+	while [ "$a" -lt "${pole[0]}" ]; do
+		ret=$ret'#'
+		a=$(($a+1))
+	done
+	echo "  <100 B  : $ret"
+	a=0;ret=""
+	while [ "$a" -lt "${pole[1]}" ]; do
+		ret=$ret'#'
+		a=$(($a+1))
+	done
+	echo "  <1 KiB  : $ret"
+	a=0;ret=""
+	while [ "$a" -lt "${pole[2]}" ]; do
+		ret=$ret'#'
+		a=$(($a+1))
+	done
+	echo "  <10 KiB : $ret"
+	a=0;ret=""
+	while [ "$a" -lt "${pole[3]}" ]; do
+		ret=$ret'#'
+		a=$(($a+1))
+	done
+	echo "  <100 KiB: $ret"
+	a=0;ret=""
+	while [ "$a" -lt "${pole[4]}" ]; do
+		ret=$ret'#'
+		a=$(($a+1))
+	done
+	echo "  <1 MiB  : $ret"
+	a=0;ret=""
+	while [ "$a" -lt "${pole[5]}" ]; do
+		ret=$ret'#'
+		a=$(($a+1))
+	done
+	echo "  <10 MiB : $ret"
+	a=0;ret=""
+	while [ "$a" -lt "${pole[6]}" ]; do
+		ret=$ret'#'
+		a=$(($a+1))
+	done
+	echo "  <100 MiB: $ret"
+	a=0;ret=""
+	while [ "$a" -lt "${pole[7]}" ]; do
+		ret=$ret'#'
+		a=$(($a+1))
+	done
+	echo "  <1 GiB  : $ret"
+	a=0;ret=""
+	while [ "$a" -lt "${pole[8]}" ]; do
+		ret=$ret'#'
+		a=$(($a+1))
+	done
+	echo "  >=1 GiB : $ret"
+
+echo "File type histogram:"
+
+i=0
+while [[ "$i" -le 10 ]]; do
+	i=$(($i+1))
+	fthistnum["$i"]=$(find $IR -type f -not -path "*$A*" -exec file '{}' \;  | cut -d: -f2- | cut -b-41 | sort | uniq -c |sort -n | tail -$i | head -1 | awk '{print $1}')
+	e=$(find $IR -type f -not -path "*$A*" -exec file '{}' \;  |cut -d: -f2- | cut -b-42 | sort | uniq -c |sort -n | sed 's/^ *[0-9]* //' |tail -$i | head -1)
+	if [ "${fthisttyp["$i-1"]}" = "$e" ]; then
+		break
+	fi
+	fthisttyp["$i"]=$e
+done
+	if [ "${fthistnum[1]}" = "" ]; then
+		exit 0
+	fi
+	g=1
+	maxim=1
+
+	norm=1
+	let co=col-48
+	if [ "$normalizace" ]; then
+		if [ "$co" -le "${fthistnum["$maxim"]}" ]; then
+			norm=$(awk "BEGIN {printf \"%.4f\",${fthistnum["$maxim"]}/${co}}")
+		fi
+	fi
+
+	g=1
+	while [ "$g" -le "$i" ]; do
+		fthistnum["$g"]=$(awk "BEGIN {printf \"%.f\",${fthistnum["$g"]}/${norm}}")
+		g=$(($g+1))
+	done
+
+#####print###########
+g=1
+while [[ "$g" -lt "$i" ]]; do
+	
+	ret="";l=0
+	while [ "$l" -lt "${fthistnum["$g"]}" ]; do 
+		ret=$ret'#'
+		l=$(($l+1))
+	done
+
+	if [ "${#fthisttyp["$g"]}" -ge 42 ]; then
+		fthisttyp["$g"]=$(echo "${fthisttyp["$g"]}" | cut -b-41)
+		echo " ${fthisttyp["$g"]}...: $ret"
+	else
+		printf " %-44s: " "${fthisttyp["$g"]}" 
+		printf "$ret\n"
+	fi
+	g=$(($g+1))
+done
+
+
